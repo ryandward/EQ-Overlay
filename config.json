@@ -1,0 +1,51 @@
+{
+  "paths": {
+    "log_dir": "/home/ryandward/EQLite/Logs",
+    "spells_file": "/home/ryandward/EQLite/spells_us.txt",
+    "whitelist_file": "/home/ryandward/Git/Quillmane/p99_spells.txt",
+    "data_dir": "~/.config/eq-overlay"
+  },
+  "server": "project1999",
+  "character": {
+    "default_level": 60
+  },
+  "windows": {
+    "chat": {
+      "side": "left",
+      "width": 340,
+      "sidebar_width": 100,
+      "opacity": 0.92
+    },
+    "timers": {
+      "side": "right",
+      "width": 340,
+      "opacity": 0.92
+    }
+  },
+  "notifications": {
+    "position": "top_center",
+    "max_visible": 5,
+    "default_duration_ms": 5000,
+    "tell_duration_ms": 8000,
+    "buff_warning_duration_ms": 6000,
+    "play_sound_on_tell": true,
+    "width": 400,
+    "spacing": 10
+  },
+  "chat": {
+    "max_messages_per_convo": 2000,
+    "history_scan_bytes": 10485760,
+    "global_channels": ["guild", "ooc", "group", "tell"]
+  },
+  "timers": {
+    "history_hours": 3.0,
+    "cast_window_seconds": 15,
+    "update_interval_ms": 50,
+    "combat_timeout_seconds": 10,
+    "dps_meter_max_players": 6
+  },
+  "behavior": {
+    "auto_hide_when_unfocused": true,
+    "auto_switch_character": true
+  }
+}

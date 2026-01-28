@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eq-overlay"
+version = "2.0.0"
+description = "Unified overlay for EverQuest Project 1999"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Ryan"}
+]
+dependencies = [
+    "PyQt6>=6.4.0",
+]
+
+[project.scripts]
+eq-overlay = "eq_overlay.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["eq_overlay*"]
