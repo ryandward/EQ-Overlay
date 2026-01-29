@@ -23,6 +23,11 @@ class SpellDatabase:
 
     P99_EXPANSIONS = {"Classic", "Kunark", "Velious", "Hole", ""}
 
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        """Normalize spell names - convert backticks to apostrophes."""
+        return name.replace("`", "'")
+
     def __init__(self, spells_file: Path, whitelist_file: Optional[Path] = None):
         self._by_name: dict[str, SpellInfo] = {}
         self._by_cast_on_you: dict[str, list[SpellInfo]] = {}
@@ -32,12 +37,12 @@ class SpellDatabase:
         self._by_id: dict[int, SpellInfo] = {}
         self._whitelist: Optional[set[str]] = None
 
-        # Load whitelist
+        # Load whitelist (normalize names)
         if whitelist_file and whitelist_file.exists():
             self._whitelist = set()
             with open(whitelist_file, "r", encoding="utf-8") as f:
                 for line in f:
-                    spell_name = line.strip()
+                    spell_name = self._normalize_name(line.strip())
                     if spell_name:
                         self._whitelist.add(spell_name)
             print(f"Loaded {len(self._whitelist)} spells from whitelist")
@@ -90,7 +95,7 @@ class SpellDatabase:
                 fields = line.split("^")
                 if len(fields) >= 14:
                     try:
-                        name = fields[1]
+                        name = self._normalize_name(fields[1])
                         if "GM" in name:
                             continue
 
@@ -105,7 +110,7 @@ class SpellDatabase:
 
                 try:
                     spell_id = int(fields[0])
-                    name = fields[1]
+                    name = self._normalize_name(fields[1])
 
                     if "GM" in name:
                         continue
@@ -171,11 +176,11 @@ class SpellDatabase:
 
     def get_by_name(self, name: str) -> Optional[SpellInfo]:
         """Get spell by exact name."""
-        return self._by_name.get(name)
+        return self._by_name.get(self._normalize_name(name))
 
     def get_cast_time(self, spell_name: str) -> int:
         """Get cast time in ms for a spell."""
-        return self._cast_times.get(spell_name, 0)
+        return self._cast_times.get(self._normalize_name(spell_name), 0)
 
     def find_by_cast_on_you(self, message: str) -> list[SpellInfo]:
         """Find spells matching a 'cast on you' message."""

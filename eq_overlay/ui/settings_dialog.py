@@ -4,8 +4,6 @@ Settings dialog with font picker and other configuration options.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Optional
 import json
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -23,10 +21,10 @@ class SettingsDialog(QDialog):
     
     settings_changed = pyqtSignal()  # Emitted when settings are saved
     
-    def __init__(self, config, config_path: Optional[Path] = None, parent=None):
+    def __init__(self, config, parent=None):
         super().__init__(parent)
         self._config = config
-        self._config_path = config_path or self._find_config_path()
+        self._config_path = config.config_path
         
         self.setWindowTitle("EQ Overlay Settings")
         self.setMinimumWidth(400)
@@ -91,18 +89,6 @@ class SettingsDialog(QDialog):
         """)
         
         self._setup_ui()
-    
-    def _find_config_path(self) -> Path:
-        """Find the config.json path."""
-        candidates = [
-            Path.cwd() / "config.json",
-            Path.home() / ".config" / "eq-overlay" / "config.json",
-            Path(__file__).parent.parent.parent / "config.json",
-        ]
-        for path in candidates:
-            if path.exists():
-                return path
-        return candidates[0]  # Default to cwd
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)

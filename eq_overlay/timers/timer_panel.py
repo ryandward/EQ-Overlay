@@ -387,9 +387,12 @@ class TimerPanel(BaseOverlayWindow):
                 rounded_ms = round(elapsed_ms / 1000) * 1000
                 if rounded_ms > 0:
                     self._item_cast_times[item_name] = rounded_ms
-                    print(f"Learned item cast time: {item_name} = {rounded_ms}ms")
 
             if spell := self._spell_db.best_match(spells, prefer_name):
+                # Learn item spell name for future use (helps bards)
+                if item_name:
+                    self._learn_item_spell(item_name, spell.name)
+                
                 duration = spell.get_duration_seconds(self._level)
                 if duration > 0:
                     category = TimerCategory.SELF_BUFF if is_self_cast else TimerCategory.RECEIVED_BUFF
@@ -483,12 +486,14 @@ class TimerPanel(BaseOverlayWindow):
             if not spell:
                 continue
 
-            # Learn item cast time
+            # Learn item cast time AND spell name for future use (helps bards)
             if item_name and cast_start:
                 elapsed_ms = int((datetime.now() - cast_start).total_seconds() * 1000)
                 rounded_ms = round(elapsed_ms / 1000) * 1000
                 if rounded_ms > 0:
                     self._item_cast_times[item_name] = rounded_ms
+                # Also learn the spell name association
+                self._learn_item_spell(item_name, spell.name)
 
             duration = spell.get_duration_seconds(self._level)
             if duration <= 0:
@@ -584,6 +589,7 @@ class TimerPanel(BaseOverlayWindow):
 
     def _load_learned_items(self) -> None:
         """Load learned item cast times and spell mappings."""
+        self._learned_items = {}  # Initialize empty
         path = self._app_config.get_learned_items_file()
         if not path.exists():
             return
@@ -612,6 +618,21 @@ class TimerPanel(BaseOverlayWindow):
             return self._learned_items[item_name].get("spell_name")
         return None
 
+    def _learn_item_spell(self, item_name: str, spell_name: str) -> None:
+        """Learn the spell name association for an item."""
+        if not hasattr(self, '_learned_items'):
+            self._learned_items = {}
+        
+        if item_name not in self._learned_items:
+            self._learned_items[item_name] = {}
+        
+        # Only set if not already known (don't overwrite)
+        if "spell_name" not in self._learned_items[item_name]:
+            self._learned_items[item_name]["spell_name"] = spell_name
+            print(f"Learned item spell: {item_name} -> {spell_name}")
+            # Save immediately so it persists even if app crashes
+            self._save_learned_items()
+
     def _save_learned_items(self) -> None:
         """Save learned item cast times."""
         path = self._app_config.get_learned_items_file()
@@ -626,7 +647,7 @@ class TimerPanel(BaseOverlayWindow):
             except Exception:
                 pass
 
-        # Update with our data
+        # Update with our data - cast times
         for item_name, cast_time_ms in self._item_cast_times.items():
             if item_name in existing:
                 cast_times = existing[item_name].get("cast_times_ms", {})
@@ -634,6 +655,16 @@ class TimerPanel(BaseOverlayWindow):
                 existing[item_name]["cast_times_ms"] = cast_times
             else:
                 existing[item_name] = {"cast_times_ms": {str(cast_time_ms): 1}}
+        
+        # Update with spell name associations
+        if hasattr(self, '_learned_items'):
+            for item_name, info in self._learned_items.items():
+                if "spell_name" in info:
+                    if item_name not in existing:
+                        existing[item_name] = {}
+                    # Only set if not already present (don't overwrite)
+                    if "spell_name" not in existing[item_name]:
+                        existing[item_name]["spell_name"] = info["spell_name"]
 
         try:
             with open(path, "w") as f:
@@ -656,15 +687,26 @@ class TimerPanel(BaseOverlayWindow):
         logout_periods = self._log_watcher.find_logout_periods(entries)
         zone_periods = self._log_watcher.find_zone_periods(entries)
 
-        # Process history (simplified - full version would track pending casts)
+        # Process history - track pending casts from items
         active: dict[tuple[str, str], tuple[datetime, any, bool]] = {}
         parser = self._log_watcher.parser
+        pending_item_spell: Optional[str] = None  # Spell name from recent item glow
+        pending_item_time: Optional[datetime] = None
 
         for entry in entries:
             msg = entry.message
 
             if parser.is_death(entry):
                 active.clear()
+                pending_item_spell = None
+                continue
+
+            # Track item glows - look up spell from learned items
+            if item_name := parser.parse_item_glow(entry):
+                spell_name = self._get_item_spell_name(item_name)
+                if spell_name:
+                    pending_item_spell = spell_name
+                    pending_item_time = entry.timestamp
                 continue
 
             if fades := self._spell_db.find_by_fades(msg):
@@ -673,7 +715,19 @@ class TimerPanel(BaseOverlayWindow):
                 continue
 
             if spells := self._spell_db.find_by_cast_on_you(msg):
-                if spell := self._spell_db.best_match(spells):
+                # Check if we have a recent item glow that matches
+                prefer = None
+                if pending_item_spell and pending_item_time:
+                    elapsed = (entry.timestamp - pending_item_time).total_seconds()
+                    if elapsed < self._app_config.timers.cast_window_seconds:
+                        # Check if pending item spell is in the matches
+                        for s in spells:
+                            if s.name == pending_item_spell:
+                                prefer = pending_item_spell
+                                break
+                    pending_item_spell = None  # Clear after use
+                
+                if spell := self._spell_db.best_match(spells, prefer):
                     if spell.get_duration_seconds(self._level) > 0:
                         active[(spell.name, "You")] = (entry.timestamp, spell, False)
 

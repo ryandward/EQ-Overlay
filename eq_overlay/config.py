@@ -100,16 +100,29 @@ class Config:
 
     # Runtime state (not from config file)
     character_name: Optional[str] = None
+    config_path: Optional[Path] = None  # Where config was loaded from
+
+    @classmethod
+    def get_user_config_dir(cls) -> Path:
+        """Get user config directory (~/.config/eq-overlay/)."""
+        return Path.home() / ".config" / "eq-overlay"
 
     @classmethod
     def load(cls, config_path: Optional[Path] = None) -> Config:
-        """Load configuration from JSON file."""
+        """Load configuration from JSON file.
+        
+        Search order:
+        1. Explicit path if provided
+        2. ~/.config/eq-overlay/config.json (user config)
+        3. ./config.json (project root, for development)
+        4. Package directory config.json (fallback)
+        """
         if config_path is None:
-            # Look in standard locations
+            # Prefer user config directory
             candidates = [
-                Path.cwd() / "config.json",
-                Path.home() / ".config" / "eq-overlay" / "config.json",
-                Path(__file__).parent.parent / "config.json",
+                cls.get_user_config_dir() / "config.json",  # User config (preferred)
+                Path.cwd() / "config.json",  # Project root
+                Path(__file__).parent.parent / "config.json",  # Package dir
             ]
             for path in candidates:
                 if path.exists():
@@ -118,13 +131,18 @@ class Config:
 
         if config_path is None or not config_path.exists():
             raise FileNotFoundError(
-                "No config.json found. Please create one from config.example.json"
+                "No config.json found. Please create one in ~/.config/eq-overlay/ "
+                "or the project directory."
             )
 
+        print(f"Loading config from: {config_path}")
+        
         with open(config_path, "r") as f:
             data = json.load(f)
 
-        return cls._from_dict(data)
+        config = cls._from_dict(data)
+        config.config_path = config_path
+        return config
 
     @classmethod
     def _from_dict(cls, data: dict) -> Config:
