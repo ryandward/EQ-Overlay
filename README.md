@@ -5,6 +5,8 @@ A log-parsing overlay for Project 1999 that gives you a modern chat interface an
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.0+-green.svg)
 
+<img width="1920" height="1067" alt="image" src="https://github.com/user-attachments/assets/4bb07117-7f75-49a3-8ada-3db317972fee" />
+
 ## What it does
 
 **Chat Panel** - Reads your EQ log and displays messages in a clean, iMessage-style interface. Conversations are threaded by channel (guild, group, ooc) and by person for tells. You can send tells directly from the overlay using xdotool. There's also a `/random` roll tracker that detects duplicate rolls and can pick winners.
