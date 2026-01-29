@@ -52,6 +52,7 @@ class ChatConfig:
     max_messages_per_convo: int
     history_scan_bytes: int
     global_channels: list[str]
+    bold_messages: bool = True  # Whether chat bubble text is bold
 
 
 @dataclass
@@ -70,6 +71,19 @@ class BehaviorConfig:
 
 
 @dataclass
+class FontConfig:
+    family: str
+    scale: float
+    # Base sizes before scaling
+    size_xxs: int = 8
+    size_xs: int = 9
+    size_sm: int = 10
+    size_md: int = 11
+    size_lg: int = 12
+    size_xl: int = 13
+
+
+@dataclass
 class Config:
     """Main configuration container."""
 
@@ -82,6 +96,7 @@ class Config:
     chat: ChatConfig
     timers: TimersConfig
     behavior: BehaviorConfig
+    font: FontConfig
 
     # Runtime state (not from config file)
     character_name: Optional[str] = None
@@ -136,9 +151,28 @@ class Config:
             opacity=data["windows"]["timers"]["opacity"],
         )
         notifications = NotificationsConfig(**data["notifications"])
-        chat = ChatConfig(**data["chat"])
+        chat_data = data["chat"]
+        chat = ChatConfig(
+            max_messages_per_convo=chat_data["max_messages_per_convo"],
+            history_scan_bytes=chat_data["history_scan_bytes"],
+            global_channels=chat_data["global_channels"],
+            bold_messages=chat_data.get("bold_messages", True),
+        )
         timers = TimersConfig(**data["timers"])
         behavior = BehaviorConfig(**data["behavior"])
+        
+        # Font config with sensible defaults
+        font_data = data.get("font", {})
+        font = FontConfig(
+            family=font_data.get("family", "DejaVu Sans"),
+            scale=font_data.get("scale", 1.0),
+            size_xxs=font_data.get("size_xxs", 8),
+            size_xs=font_data.get("size_xs", 9),
+            size_sm=font_data.get("size_sm", 10),
+            size_md=font_data.get("size_md", 11),
+            size_lg=font_data.get("size_lg", 12),
+            size_xl=font_data.get("size_xl", 13),
+        )
 
         return cls(
             paths=paths,
@@ -150,6 +184,7 @@ class Config:
             chat=chat,
             timers=timers,
             behavior=behavior,
+            font=font,
         )
 
     def get_conversations_file(self, character_name: str) -> Path:

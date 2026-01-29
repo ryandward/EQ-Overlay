@@ -29,7 +29,7 @@ from ..ui.theme import Theme
 from ..ui.base_window import BaseOverlayWindow
 from .spell_database import SpellDatabase
 from .timer_manager import TimerManager
-from .widgets import TimerBarWidget, CastingBarWidget, DPSMeterWidget, TargetBuffsRow
+from .widgets import TimerBarWidget, CastingBarWidget, DPSMeterWidget, SpellGroupWidget
 
 
 class TimerPanel(BaseOverlayWindow):
@@ -124,10 +124,9 @@ class TimerPanel(BaseOverlayWindow):
         # === YOUR BUFFS SECTION ===
         self._your_buffs_label = QLabel("Your Buffs")
         self._your_buffs_label.setFixedHeight(18)
-        self._your_buffs_label.setStyleSheet("""
+        self._your_buffs_label.setStyleSheet(f"""
             color: rgba(150, 180, 200, 200);
-            font-size: 10px;
-            font-weight: bold;
+            {Theme.css_font_sm()}
             padding: 2px 4px;
         """)
         layout.addWidget(self._your_buffs_label)
@@ -166,10 +165,9 @@ class TimerPanel(BaseOverlayWindow):
         # Label for others section (hidden when no others)
         self._others_buffs_label = QLabel("Buffs on Others")
         self._others_buffs_label.setFixedHeight(18)
-        self._others_buffs_label.setStyleSheet("""
+        self._others_buffs_label.setStyleSheet(f"""
             color: rgba(150, 180, 200, 200);
-            font-size: 10px;
-            font-weight: bold;
+            {Theme.css_font_sm()}
             padding: 2px 4px;
         """)
         self._others_buffs_label.hide()
@@ -187,8 +185,8 @@ class TimerPanel(BaseOverlayWindow):
         timer_scroll.setWidget(timer_container)
         layout.addWidget(timer_scroll, 1)
 
-        # Track target rows
-        self._target_rows: dict[str, TargetBuffsRow] = {}
+        # Track spell groups for buffs on others
+        self._spell_groups: dict[str, SpellGroupWidget] = {}
 
         # Separator before DPS
         sep2 = QFrame()
@@ -232,20 +230,21 @@ class TimerPanel(BaseOverlayWindow):
         self._refresh_timers()
 
     def _refresh_timers(self) -> None:
-        """Update timer displays - bars for self, then others below."""
+        """Update timer displays - bars for self, grouped by spell for others."""
         timers = self._timer_mgr.get_all()
 
         # Separate self-buffs from buffs on others
         self_timers = []
-        others_timers: dict[str, list[ActiveTimer]] = {}
+        # Group others by spell name (not target)
+        spell_groups: dict[str, list[ActiveTimer]] = {}
 
         for timer in timers:
             if timer.target == "You":
                 self_timers.append(timer)
             else:
-                if timer.target not in others_timers:
-                    others_timers[timer.target] = []
-                others_timers[timer.target].append(timer)
+                if timer.spell_name not in spell_groups:
+                    spell_groups[timer.spell_name] = []
+                spell_groups[timer.spell_name].append(timer)
 
         # Update self-buff bars (hide unused ones)
         for i, bar in enumerate(self._timer_bars):
@@ -260,29 +259,35 @@ class TimerPanel(BaseOverlayWindow):
         self._your_buffs_label.setVisible(len(self_timers) > 0)
         
         # Show/hide others section
-        has_others = len(others_timers) > 0
+        has_others = len(spell_groups) > 0
         self._others_separator.setVisible(has_others)
         self._others_buffs_label.setVisible(has_others)
 
-        # Update others section - create/update/remove target rows
-        current_targets = set(others_timers.keys())
-        existing_targets = set(self._target_rows.keys())
+        # Update others section - group by spell, sorted by soonest expiring
+        current_spells = set(spell_groups.keys())
+        existing_spells = set(self._spell_groups.keys())
 
-        # Remove rows for targets no longer present
-        for target in existing_targets - current_targets:
-            row = self._target_rows.pop(target)
-            self._others_layout.removeWidget(row)
-            row.deleteLater()
+        # Remove groups for spells no longer present
+        for spell_name in existing_spells - current_spells:
+            group = self._spell_groups.pop(spell_name)
+            self._others_layout.removeWidget(group)
+            group.deleteLater()
 
-        # Add/update rows for current targets
-        for target, target_timers in others_timers.items():
-            if target not in self._target_rows:
-                # Create new row
-                row = TargetBuffsRow(target)
-                self._target_rows[target] = row
-                self._others_layout.addWidget(row)
+        # Add/update groups for current spells
+        # Sort spell groups by soonest timer across all targets
+        sorted_spells = sorted(
+            spell_groups.items(),
+            key=lambda x: min(t.remaining_seconds for t in x[1])
+        )
+        
+        for spell_name, spell_timers in sorted_spells:
+            if spell_name not in self._spell_groups:
+                # Create new group
+                group = SpellGroupWidget(spell_name)
+                self._spell_groups[spell_name] = group
+                self._others_layout.addWidget(group)
 
-            self._target_rows[target].update_timers(target_timers)
+            self._spell_groups[spell_name].update_timers(spell_timers)
 
     def _process_log_entry(self, entry: LogEntry) -> None:
         """Process a log entry for timer and DPS tracking."""
@@ -445,10 +450,7 @@ class TimerPanel(BaseOverlayWindow):
     def _check_cast_on_other(self, msg: str) -> None:
         """Check if message is a spell landing on someone else (that YOU cast)."""
         if not self._pending_cast:
-            print(f"DEBUG _check_cast_on_other: no pending cast for msg='{msg}'")
             return
-        
-        print(f"DEBUG _check_cast_on_other: checking msg='{msg}' with pending='{self._pending_cast.spell_name}'")
 
         # Check all cast_on_other suffixes
         for suffix, spells in self._spell_db._by_cast_on_other.items():
@@ -460,26 +462,18 @@ class TimerPanel(BaseOverlayWindow):
             if not target or target.startswith(" "):
                 continue
 
-            print(f"DEBUG: cast_on_other match - msg='{msg}', suffix='{suffix}', target='{target}'")
-            print(f"DEBUG: pending_cast spell='{self._pending_cast.spell_name}'")
-
             # Check if this matches our pending cast
             prefer = None
             elapsed = (datetime.now() - self._pending_cast.cast_time).total_seconds()
-            print(f"DEBUG: elapsed={elapsed:.2f}s, window={self._app_config.timers.cast_window_seconds}s")
             if elapsed < self._app_config.timers.cast_window_seconds:
                 for s in spells:
-                    print(f"DEBUG: checking spell '{s.name}' against pending '{self._pending_cast.spell_name}'")
                     if s.name == self._pending_cast.spell_name:
                         prefer = s.name
                         break
 
             if not prefer:
-                print(f"DEBUG: no prefer match, continuing")
                 continue
 
-            print(f"DEBUG: MATCH FOUND! prefer='{prefer}', clearing pending cast")
-            
             # Clear pending cast and create timer
             item_name = self._pending_cast.item_name
             cast_start = self._pending_cast.cast_time
@@ -487,7 +481,6 @@ class TimerPanel(BaseOverlayWindow):
 
             spell = self._spell_db.best_match(spells, prefer)
             if not spell:
-                print(f"DEBUG: best_match returned None")
                 continue
 
             # Learn item cast time
@@ -498,9 +491,7 @@ class TimerPanel(BaseOverlayWindow):
                     self._item_cast_times[item_name] = rounded_ms
 
             duration = spell.get_duration_seconds(self._level)
-            print(f"DEBUG: spell={spell.name}, duration={duration}")
             if duration <= 0:
-                print(f"DEBUG: duration <= 0, skipping")
                 continue
 
             # Use spell's beneficial flag to determine category
@@ -510,7 +501,6 @@ class TimerPanel(BaseOverlayWindow):
                 else TimerCategory.DEBUFF
             )
 
-            print(f"DEBUG: Creating timer for {spell.name} on {target}, duration={duration}s")
             timer = ActiveTimer(
                 spell_name=spell.name,
                 target=target,

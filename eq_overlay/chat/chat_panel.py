@@ -33,16 +33,20 @@ class ConversationView(QFrame):
     """View for displaying messages in a conversation."""
 
     request_more = pyqtSignal()
-    MAX_BUBBLE_WIDTH = 220
     MAX_DISPLAY_MESSAGES = 100
 
-    def __init__(self, parent=None):
+    def __init__(self, max_bubble_width: int = 220, parent=None):
         super().__init__(parent)
         self._conversation: Optional[Conversation] = None
         self._loading_more = False
+        self._max_bubble_width = max_bubble_width
 
         # Cache: conv_id -> (scroll_area, message_layout, widget_list, last_msg_timestamp)
         self._conv_cache: dict[str, tuple] = {}
+        
+        # Track if user is "following" (at bottom) per conversation
+        # True = auto-scroll on new messages, False = user scrolled up
+        self._follow_mode: dict[str, bool] = {}
 
         self.setStyleSheet("background: transparent;")
 
@@ -55,8 +59,9 @@ class ConversationView(QFrame):
         layout.addWidget(self._stack)
 
         self._current_scroll = None
+        self._current_conv_id: Optional[str] = None
 
-    def _create_scroll_area(self) -> tuple:
+    def _create_scroll_area(self, conv_id: str) -> tuple:
         """Create a new scroll area for a conversation."""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -83,16 +88,51 @@ class ConversationView(QFrame):
         msg_layout.addStretch()
 
         scroll.setWidget(container)
-        scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
+        
+        # Track scroll position changes for this conversation
+        scroll.verticalScrollBar().valueChanged.connect(
+            lambda v: self._on_scroll_changed(conv_id, v)
+        )
+        # Also track when scrollbar range changes (content added)
+        scroll.verticalScrollBar().rangeChanged.connect(
+            lambda min_val, max_val: self._on_range_changed(conv_id, max_val)
+        )
 
         self._stack.addWidget(scroll)
+        self._follow_mode[conv_id] = True  # Start in follow mode
         return (scroll, msg_layout, [])
 
-    def _on_scroll(self, value: int) -> None:
+    def _on_scroll_changed(self, conv_id: str, value: int) -> None:
+        """Track when user scrolls."""
+        if conv_id not in self._conv_cache:
+            return
+            
+        scroll, _, _, _ = self._conv_cache[conv_id]
+        sb = scroll.verticalScrollBar()
+        
+        # If user scrolled to bottom (within 30px), re-enable follow mode
+        if sb.maximum() > 0 and (sb.maximum() - value) < 30:
+            self._follow_mode[conv_id] = True
+        # If user scrolled away from bottom, disable follow mode
+        elif sb.maximum() > 0 and (sb.maximum() - value) > 50:
+            self._follow_mode[conv_id] = False
+        
+        # Original load-more logic
         if value == 0 and not self._loading_more and self._conversation:
             if self._conversation.messages:
                 self._loading_more = True
                 self.request_more.emit()
+
+    def _on_range_changed(self, conv_id: str, max_val: int) -> None:
+        """When content is added and range changes, scroll if in follow mode."""
+        if self._follow_mode.get(conv_id, True) and conv_id in self._conv_cache:
+            scroll, _, _, _ = self._conv_cache[conv_id]
+            # Scroll to the new maximum
+            scroll.verticalScrollBar().setValue(max_val)
+
+    def _on_scroll(self, value: int) -> None:
+        # Legacy - kept for compatibility but main logic moved to _on_scroll_changed
+        pass
 
     def set_loading(self, loading: bool) -> None:
         self._loading_more = loading
@@ -100,10 +140,6 @@ class ConversationView(QFrame):
     def _scroll_to_bottom(self) -> None:
         """Scroll current view to bottom."""
         if self._current_scroll:
-            # Force layout update first
-            self._current_scroll.widget().updateGeometry()
-            from PyQt6.QtWidgets import QApplication
-            QApplication.processEvents()
             sb = self._current_scroll.verticalScrollBar()
             sb.setValue(sb.maximum())
 
@@ -111,7 +147,11 @@ class ConversationView(QFrame):
         """Display a conversation."""
         self._conversation = conversation
         conv_id = conversation.id
+        self._current_conv_id = conv_id
         is_global = conv_id == ConversationManager.GLOBAL_ID
+        
+        # When switching to a conversation, enable follow mode
+        self._follow_mode[conv_id] = True
 
         all_msgs = sorted(conversation.messages, key=lambda m: m.timestamp)
         messages_to_show = all_msgs[-self.MAX_DISPLAY_MESSAGES:]
@@ -137,7 +177,7 @@ class ConversationView(QFrame):
                                 if last_channel == msg.channel:
                                     show_sender = False
 
-                        widget = MessageBubble(msg, show_sender, self.MAX_BUBBLE_WIDTH)
+                        widget = MessageBubble(msg, show_sender, self._max_bubble_width)
                         count = msg_layout.count()
                         msg_layout.insertWidget(count - 1, widget)
                         widgets.append(widget)
@@ -151,10 +191,8 @@ class ConversationView(QFrame):
             self._stack.setCurrentWidget(scroll)
             self._current_scroll = scroll
 
+            # Scroll to bottom on conversation switch
             def do_scroll():
-                scroll.widget().updateGeometry()
-                from PyQt6.QtWidgets import QApplication
-                QApplication.processEvents()
                 scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum())
 
             QTimer.singleShot(0, do_scroll)
@@ -162,7 +200,7 @@ class ConversationView(QFrame):
             return
 
         # Create new cache entry
-        scroll, msg_layout, widgets = self._create_scroll_area()
+        scroll, msg_layout, widgets = self._create_scroll_area(conv_id)
 
         last_sender = None
         last_time = None
@@ -175,7 +213,7 @@ class ConversationView(QFrame):
                     if last_channel == msg.channel:
                         show_sender = False
 
-            widget = MessageBubble(msg, show_sender, self.MAX_BUBBLE_WIDTH)
+            widget = MessageBubble(msg, show_sender, self._max_bubble_width)
             count = msg_layout.count()
             msg_layout.insertWidget(count - 1, widget)
             widgets.append(widget)
@@ -190,10 +228,8 @@ class ConversationView(QFrame):
         self._stack.setCurrentWidget(scroll)
         self._current_scroll = scroll
 
+        # Scroll to bottom for new conversation
         def do_scroll():
-            scroll.widget().updateGeometry()
-            from PyQt6.QtWidgets import QApplication
-            QApplication.processEvents()
             scroll.verticalScrollBar().setValue(scroll.verticalScrollBar().maximum())
 
         QTimer.singleShot(0, do_scroll)
@@ -220,11 +256,7 @@ class ConversationView(QFrame):
                 if (msg.timestamp - last_msg.timestamp).total_seconds() < 120:
                     show_sender = False
 
-        widget = MessageBubble(msg, show_sender, self.MAX_BUBBLE_WIDTH)
-        
-        # Check if we're at or near the bottom BEFORE adding
-        sb = scroll.verticalScrollBar()
-        was_at_bottom = (sb.maximum() - sb.value()) < 50
+        widget = MessageBubble(msg, show_sender, self._max_bubble_width)
         
         count = msg_layout.count()
         msg_layout.insertWidget(count - 1, widget)
@@ -234,20 +266,8 @@ class ConversationView(QFrame):
 
         if animate:
             QTimer.singleShot(50, widget.flash)
-
-        # Only auto-scroll if user was at bottom
-        if was_at_bottom:
-            def do_scroll():
-                # Force layout update first
-                scroll.widget().updateGeometry()
-                from PyQt6.QtWidgets import QApplication
-                QApplication.processEvents()
-                sb.setValue(sb.maximum())
-
-            # Multiple attempts to ensure layout is complete
-            QTimer.singleShot(0, do_scroll)
-            QTimer.singleShot(50, do_scroll)
-            QTimer.singleShot(100, do_scroll)
+        
+        # Scrolling is handled automatically by rangeChanged signal in follow mode
 
 
 class ChatPanel(BaseOverlayWindow):
@@ -334,8 +354,10 @@ class ChatPanel(BaseOverlayWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
 
-        # Conversation view
-        self._conv_view = ConversationView()
+        # Conversation view - calculate bubble width from available space
+        message_area_width = self._app_config.chat_window.width - self._app_config.chat_window.sidebar_width
+        max_bubble_width = message_area_width - 20  # Leave margin for padding
+        self._conv_view = ConversationView(max_bubble_width)
         right_layout.addWidget(self._conv_view, 1)
 
         # Random winner button (hidden by default)
@@ -352,41 +374,40 @@ class ChatPanel(BaseOverlayWindow):
         from PyQt6.QtWidgets import QPushButton
         
         self._clear_button = QPushButton("🔄 Clear")
-        self._clear_button.setStyleSheet("""
-            QPushButton {
+        self._clear_button.setStyleSheet(f"""
+            QPushButton {{
                 background-color: rgba(100, 100, 110, 180);
                 color: white;
                 border: none;
                 border-radius: 6px;
                 padding: 8px 12px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
+                {Theme.css_font_md()}
+            }}
+            QPushButton:hover {{
                 background-color: rgba(120, 120, 130, 200);
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: rgba(80, 80, 90, 200);
-            }
+            }}
         """)
         self._clear_button.clicked.connect(self._clear_random_rolls)
         
         self._winner_button = QPushButton("🎲 Pick Winner")
-        self._winner_button.setStyleSheet("""
-            QPushButton {
+        self._winner_button.setStyleSheet(f"""
+            QPushButton {{
                 background-color: rgba(70, 130, 90, 200);
                 color: white;
                 border: none;
                 border-radius: 6px;
                 padding: 8px 16px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
+                {Theme.css_font_lg(bold=True)}
+            }}
+            QPushButton:hover {{
                 background-color: rgba(90, 150, 110, 220);
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: rgba(60, 110, 80, 220);
-            }
+            }}
         """)
         self._winner_button.clicked.connect(self._pick_random_winner)
         
@@ -407,7 +428,7 @@ class ChatPanel(BaseOverlayWindow):
                 border: 1px solid rgba(60, 60, 80, 150);
                 border-radius: 8px;
                 padding: 10px 15px;
-                font-size: 12px;
+                {Theme.css_font_lg()}
                 margin: 8px;
             }}
             QLineEdit:focus {{

@@ -40,17 +40,16 @@ class TitleBar(QFrame):
         layout.setSpacing(8)
 
         self._title_label = QLabel(title)
-        self._title_label.setStyleSheet("""
+        self._title_label.setStyleSheet(f"""
             color: white;
-            font-weight: bold;
-            font-size: 11px;
+            {Theme.css_font_md(bold=True)}
             background: transparent;
         """)
 
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("""
+        self._status_label.setStyleSheet(f"""
             color: #ffcc00;
-            font-size: 10px;
+            {Theme.css_font_sm(bold=False)}
             background: transparent;
         """)
 
@@ -230,10 +229,27 @@ class BaseOverlayWindow(QWidget):
         auto_hide_action.setChecked(self._auto_hide)
         auto_hide_action.triggered.connect(self.set_auto_hide)
 
+        # Settings
+        menu.addSeparator()
+        settings_action = menu.addAction("⚙ Settings...")
+        settings_action.triggered.connect(self._show_settings)
+
         # Add subclass-specific menu items
         self._add_context_menu_items(menu)
 
         menu.exec(event.globalPos())
+    
+    def _show_settings(self):
+        """Show the settings dialog."""
+        from .settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self._app_config, parent=self)
+        dialog.settings_changed.connect(self._on_settings_changed)
+        dialog.exec()
+    
+    def _on_settings_changed(self):
+        """Handle settings changes - can be overridden by subclasses."""
+        # Trigger a repaint to pick up new fonts
+        self.update()
 
     def _add_context_menu_items(self, menu: QMenu) -> None:
         """Override in subclasses to add custom menu items."""

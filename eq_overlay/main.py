@@ -81,6 +81,13 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(True)
 
+    # Initialize fonts from config (must be after QApplication)
+    font_family = Theme.init_fonts(config.font)
+    print(f"Using font: {font_family}")
+    
+    # Initialize chat-specific settings
+    Theme.set_chat_bold_messages(config.chat.bold_messages)
+
     # Create shared signals
     signals = Signals()
 
@@ -248,7 +255,7 @@ def main() -> int:
         chat_panel.show()
     if timer_panel:
         timer_panel.show()
-    notif_center.show()
+    # Note: notif_center shows itself when notifications arrive
 
     # Start log watcher thread
     watch_thread = threading.Thread(target=watcher.watch, daemon=True)

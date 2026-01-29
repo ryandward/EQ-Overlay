@@ -88,4 +88,3 @@ eq_overlay/
 │       ├── timer_panel.py
 │       └── widgets.py
 ```
-# EQ-Overlay

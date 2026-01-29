@@ -35,9 +35,9 @@ def get_contrast_text_color(bg_color: QColor) -> QColor:
 def get_contrast_shadow_color(bg_color: QColor) -> QColor:
     """Return appropriate shadow color based on background luminance."""
     if get_luminance(bg_color) > 0.45:
-        return QColor(255, 255, 255, 60)
+        return QColor(255, 255, 255, 80)
     else:
-        return QColor(0, 0, 0, 120)
+        return QColor(0, 0, 0, 180)
 
 
 def rgb_to_hsl(r: int, g: int, b: int) -> tuple[float, float, float]:
@@ -279,20 +279,218 @@ class Theme:
 
         return snap_to_palette(fallback)
 
-    # Font helpers
-    @staticmethod
-    def font(size: int = 11, bold: bool = False) -> QFont:
+    # Timer warning thresholds (in seconds)
+    TIMER_WARNING_THRESHOLD = 120  # 2 minutes - start glowing
+    TIMER_URGENT_THRESHOLD = 20    # 20 seconds - intense pulsing
+
+    # Font configuration - loaded from config, with defaults
+    _font_family: str = "DejaVu Sans"
+    _font_scale: float = 1.0
+    _base_sizes: dict = None
+    _initialized: bool = False
+    _chat_bold_messages: bool = True  # Whether chat message text is bold
+    
+    # Fallback fonts in order of preference
+    FALLBACK_FONTS = [
+        "DejaVu Sans",
+        "Segoe UI", 
+        "Roboto",
+        "Noto Sans",
+        "Liberation Sans",
+        "Arial",
+        "Helvetica",
+        "sans-serif",
+    ]
+    
+    @classmethod
+    def init_fonts(cls, font_config=None) -> str:
+        """
+        Initialize font system from config. Returns the validated font family.
+        Call this once at startup after loading config.
+        """
+        from PyQt6.QtGui import QFontDatabase
+        
+        # Set base sizes
+        if font_config:
+            cls._base_sizes = {
+                "xxs": font_config.size_xxs,
+                "xs": font_config.size_xs,
+                "sm": font_config.size_sm,
+                "md": font_config.size_md,
+                "lg": font_config.size_lg,
+                "xl": font_config.size_xl,
+            }
+            cls._font_scale = font_config.scale
+            requested_family = font_config.family
+        else:
+            cls._base_sizes = {"xxs": 8, "xs": 9, "sm": 10, "md": 11, "lg": 12, "xl": 13}
+            cls._font_scale = 1.0
+            requested_family = "DejaVu Sans"
+        
+        # Validate and select font
+        available_fonts = set(QFontDatabase.families())
+        
+        # Try requested font first
+        if requested_family in available_fonts:
+            cls._font_family = requested_family
+        else:
+            # Try fallbacks
+            cls._font_family = None
+            for fallback in cls.FALLBACK_FONTS:
+                if fallback in available_fonts:
+                    cls._font_family = fallback
+                    print(f"[Theme] Font '{requested_family}' not found, using '{fallback}'")
+                    break
+            
+            if cls._font_family is None:
+                # Last resort: pick first available sans-serif
+                for font in available_fonts:
+                    if "sans" in font.lower():
+                        cls._font_family = font
+                        print(f"[Theme] Using available font: '{font}'")
+                        break
+                
+                if cls._font_family is None:
+                    cls._font_family = list(available_fonts)[0] if available_fonts else "sans-serif"
+                    print(f"[Theme] Fallback to: '{cls._font_family}'")
+        
+        cls._initialized = True
+        return cls._font_family
+    
+    @classmethod
+    def get_available_fonts(cls) -> list[str]:
+        """Return list of curated, appropriate UI fonts that are installed."""
+        from PyQt6.QtGui import QFontDatabase
+        
+        # Curated list of good UI fonts (sans-serif, readable, Latin)
+        PREFERRED_FONTS = [
+            # Cross-platform favorites
+            "DejaVu Sans",
+            "Noto Sans",
+            "Roboto",
+            "Open Sans",
+            "Source Sans Pro",
+            "Lato",
+            "Inter",
+            "Fira Sans",
+            "Ubuntu",
+            "Cantarell",
+            # Windows
+            "Segoe UI",
+            "Tahoma",
+            "Verdana",
+            "Trebuchet MS",
+            "Calibri",
+            # macOS
+            "SF Pro",
+            "Helvetica Neue",
+            "Helvetica",
+            "Lucida Grande",
+            # Linux
+            "Liberation Sans",
+            "FreeSans",
+            "Droid Sans",
+            # Fallbacks
+            "Arial",
+            "sans-serif",
+        ]
+        
+        available = set(QFontDatabase.families())
+        # Return only preferred fonts that are installed, in preference order
+        return [f for f in PREFERRED_FONTS if f in available]
+    
+    @classmethod
+    def font_family(cls) -> str:
+        """Get the current font family."""
+        return cls._font_family
+    
+    @classmethod
+    def _get_size(cls, name: str) -> int:
+        """Get scaled font size."""
+        if cls._base_sizes is None:
+            cls._base_sizes = {"xxs": 8, "xs": 9, "sm": 10, "md": 11, "lg": 12, "xl": 13}
+        base = cls._base_sizes.get(name, 11)
+        return max(6, int(base * cls._font_scale))  # Minimum 6px
+    
+    @classmethod
+    def css_font(cls, size: int = None, bold: bool = False) -> str:
+        """Return CSS font properties string including font-family."""
+        if size is None:
+            size = cls._get_size("md")
+        weight = "bold" if bold else "normal"
+        return f"font-family: '{cls._font_family}', sans-serif; font-size: {size}px; font-weight: {weight};"
+    
+    @classmethod
+    def css_font_xxs(cls, bold: bool = True) -> str:
+        return cls.css_font(cls._get_size("xxs"), bold)
+    
+    @classmethod
+    def css_font_xs(cls, bold: bool = False) -> str:
+        return cls.css_font(cls._get_size("xs"), bold)
+    
+    @classmethod
+    def css_font_sm(cls, bold: bool = True) -> str:
+        return cls.css_font(cls._get_size("sm"), bold)
+    
+    @classmethod
+    def css_font_md(cls, bold: bool = False) -> str:
+        return cls.css_font(cls._get_size("md"), bold)
+    
+    @classmethod
+    def css_font_lg(cls, bold: bool = False) -> str:
+        return cls.css_font(cls._get_size("lg"), bold)
+    
+    @classmethod
+    def css_font_xl(cls, bold: bool = True) -> str:
+        return cls.css_font(cls._get_size("xl"), bold)
+
+    # QFont object helpers
+    @classmethod
+    def font(cls, size: int = None, bold: bool = False) -> QFont:
+        """Return QFont object with configured font family."""
+        if size is None:
+            size = cls._get_size("md")
         weight = QFont.Weight.Bold if bold else QFont.Weight.Normal
-        return QFont("Segoe UI", size, weight)
+        font = QFont(cls._font_family, size, weight)
+        font.setStyleHint(QFont.StyleHint.SansSerif)
+        return font
 
-    @staticmethod
-    def font_small(bold: bool = False) -> QFont:
-        return Theme.font(9, bold)
+    @classmethod
+    def font_xxs(cls, bold: bool = True) -> QFont:
+        return cls.font(cls._get_size("xxs"), bold)
 
-    @staticmethod
-    def font_medium(bold: bool = False) -> QFont:
-        return Theme.font(11, bold)
+    @classmethod
+    def font_xs(cls, bold: bool = False) -> QFont:
+        return cls.font(cls._get_size("xs"), bold)
+    
+    @classmethod
+    def font_sm(cls, bold: bool = False) -> QFont:
+        return cls.font(cls._get_size("sm"), bold)
 
-    @staticmethod
-    def font_large(bold: bool = False) -> QFont:
-        return Theme.font(13, bold)
+    @classmethod
+    def font_md(cls, bold: bool = False) -> QFont:
+        return cls.font(cls._get_size("md"), bold)
+    
+    @classmethod
+    def font_lg(cls, bold: bool = False) -> QFont:
+        return cls.font(cls._get_size("lg"), bold)
+
+    @classmethod
+    def font_xl(cls, bold: bool = True) -> QFont:
+        return cls.font(cls._get_size("xl"), bold)
+
+    # Chat-specific font settings
+    @classmethod
+    def set_chat_bold_messages(cls, bold: bool) -> None:
+        """Set whether chat message text should be bold."""
+        cls._chat_bold_messages = bold
+    
+    @classmethod
+    def font_chat_message(cls) -> QFont:
+        """Get the font for chat message content (respects bold_messages setting)."""
+        return cls.font(cls._get_size("md"), cls._chat_bold_messages)
+    
+    @classmethod
+    def css_font_chat_message(cls) -> str:
+        """Get CSS for chat message content (respects bold_messages setting)."""
+        return cls.css_font(cls._get_size("md"), cls._chat_bold_messages)

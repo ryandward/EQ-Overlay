@@ -159,7 +159,7 @@ class ConversationListItem(QFrame):
 
         # Name
         text_x = indicator_width + 12
-        painter.setFont(Theme.font(11, bold=True))
+        painter.setFont(Theme.font_md(bold=True))
         painter.setPen(QPen(Theme.TEXT_PRIMARY))
         fm = QFontMetrics(painter.font())
         name_width = w - text_x - 10
@@ -181,7 +181,7 @@ class ConversationListItem(QFrame):
             painter.setBrush(QBrush(Theme.UNREAD_BADGE))
             painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
             painter.setPen(QPen(Theme.TEXT_PRIMARY))
-            painter.setFont(Theme.font(8, bold=True))
+            painter.setFont(Theme.font_xxs())
             painter.drawText(
                 badge_x, badge_y, badge_size, badge_size,
                 Qt.AlignmentFlag.AlignCenter, str(min(conv.unread_count, 99))
@@ -302,7 +302,7 @@ class GlobalConversationItem(QFrame):
 
         # Name
         text_x = bar_width + 12
-        painter.setFont(Theme.font(11, bold=True))
+        painter.setFont(Theme.font_md(bold=True))
         painter.setPen(QPen(Theme.TEXT_PRIMARY))
         painter.drawText(
             text_x, 0, w - text_x - 10, h,
@@ -313,7 +313,7 @@ class GlobalConversationItem(QFrame):
         # Channel count
         channel_count = len(self._conv_manager.get_global_channels())
         hint_text = f"({channel_count})"
-        painter.setFont(Theme.font(9))
+        painter.setFont(Theme.font_xs())
         painter.setPen(QPen(Theme.TEXT_DIM))
         fm = QFontMetrics(painter.font())
         hint_width = fm.horizontalAdvance(hint_text)
@@ -416,7 +416,7 @@ class MessageBubble(QFrame):
         clipboard.setText(text)
 
     def _calculate_height(self) -> None:
-        font = Theme.font(11)
+        font = Theme.font_chat_message()
         fm = QFontMetrics(font)
 
         text_width = self._max_bubble_width - 24
@@ -453,7 +453,7 @@ class MessageBubble(QFrame):
             bubble_color = Theme.get_channel_color(msg.channel.value)
         is_outgoing = msg.is_outgoing
 
-        font = Theme.font(11)
+        font = Theme.font_chat_message()
         fm = QFontMetrics(font)
 
         text_width = self._max_bubble_width - 24
@@ -480,7 +480,7 @@ class MessageBubble(QFrame):
 
         # Header
         if self._show_sender:
-            painter.setFont(Theme.font(10, bold=True))
+            painter.setFont(Theme.font_sm(bold=True))
             
             # For outgoing tells, show "To <recipient>" instead of sender
             if is_outgoing and msg.channel == ChannelType.TELL and msg.tell_target:

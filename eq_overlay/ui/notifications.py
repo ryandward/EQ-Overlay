@@ -146,7 +146,7 @@ class NotificationBubble(QWidget):
         painter.drawRoundedRect(QRectF(0, 0, 5, h), 2, 2)
 
         # Icon + Title
-        painter.setFont(Theme.font(10, bold=True))
+        painter.setFont(Theme.font_sm(bold=True))
 
         icon = notif.icon or self._get_default_icon()
         title = f"{icon} {notif.title}"
@@ -159,7 +159,7 @@ class NotificationBubble(QWidget):
         )
 
         # Message content (word wrapped)
-        painter.setFont(Theme.font(11))
+        painter.setFont(Theme.font_md())
         painter.setPen(QPen(Theme.TEXT_PRIMARY))
         text_rect = QRectF(15, 34, w - 30, h - 42)
         painter.drawText(text_rect, Qt.TextFlag.TextWordWrap, notif.message)
@@ -230,8 +230,13 @@ class NotificationCenter(QWidget):
     def update_mask(self) -> None:
         """Update the click mask to only include bubble areas."""
         if not self._bubbles:
-            self.setMask(QRegion())
+            # No bubbles - hide the window entirely so it doesn't block clicks
+            self.hide()
             return
+        
+        # Make sure we're visible when we have bubbles
+        if not self.isVisible():
+            self.show()
 
         mask = QRegion()
         for bubble in self._bubbles:
@@ -239,7 +244,10 @@ class NotificationCenter(QWidget):
                 rect = bubble.geometry()
                 mask = mask.united(QRegion(rect))
 
-        self.setMask(mask)
+        if mask.isEmpty():
+            self.hide()
+        else:
+            self.setMask(mask)
 
     def show_notification(self, notification: Notification) -> None:
         """Show a new notification."""
@@ -280,11 +288,7 @@ class NotificationCenter(QWidget):
         if notification.type == NotificationType.CHAT_TELL and self._config.play_sound_on_tell:
             play_notification_sound()
 
-        self.update_mask()
-
-        # Make sure we're visible
-        if not self.isVisible():
-            self.show()
+        self.update_mask()  # This will show the window if needed
 
     def _on_bubble_clicked(self, notification: Notification) -> None:
         """Handle bubble click."""
@@ -302,11 +306,7 @@ class NotificationCenter(QWidget):
             b.move(20, y_pos)
             y_pos += b.height() + self._config.spacing
 
-        self.update_mask()
-
-        # Hide if no bubbles
-        if not self._bubbles:
-            self.hide()
+        self.update_mask()  # This will hide if no bubbles remain
 
     def clear_all(self) -> None:
         """Dismiss all notifications."""
